@@ -1,0 +1,29 @@
+retryPeriod: 3 day ago
+
+processors:
+  - genericjson
+
+outputs:
+  - type: scc
+    source: ${scc_source}
+    finding_id: "{{ data.incident.incident_id|hash_string('md5') }}"
+    vars: # Additional variables to register in Jinja
+      severity:
+%{ for finding in jsondecode(findings) }
+        ${finding.finding}: "${finding.severity}"
+%{ endfor }
+      class:
+%{ for finding in jsondecode(findings) }
+        ${finding.finding}: "${finding.class}"
+%{ endfor }
+    finding:
+      resourceName: "//resourcemanager.googleapis.com/projects/{{ data.incident.scoping_project_number }}"
+      state: "{% if data.incident.state == 'open' %}ACTIVE{% else %}INACTIVE{% endif %}"
+      category: "{{ data.incident.policy_name }}"
+      externalUri: "{{ data.incident.url }}"
+      sourceProperties: "{% set props = {'type': data.incident.resource.type} %}{{ props|merge_dict(data.incident.resource.labels)|json_encode }}"
+      eventTime: "{{ ''|utc_strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+      createTime: "{{ ''|utc_strftime('%Y-%m-%dT%H:%M:%SZ') }}"
+      severity: "{{ severity[data.incident.policy_name] }}"
+      findingClass: "{{ class[data.incident.policy_name] }}"
+      
