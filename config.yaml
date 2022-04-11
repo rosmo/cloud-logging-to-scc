@@ -9,11 +9,11 @@ outputs:
     finding_id: "{{ data.incident.incident_id|hash_string('md5') }}"
     vars: # Additional variables to register in Jinja
       severity:
-%{ for finding in jsondecode(findings) }
+%{ for finding in jsondecode(findings) ~}
         ${finding.finding}: "${finding.severity}"
 %{ endfor }
       class:
-%{ for finding in jsondecode(findings) }
+%{ for finding in jsondecode(findings) ~}
         ${finding.finding}: "${finding.class}"
 %{ endfor }
     finding:

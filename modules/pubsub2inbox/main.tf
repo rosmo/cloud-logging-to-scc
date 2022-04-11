@@ -13,7 +13,7 @@
 #   limitations under the License.
 
 terraform {
-  required_version = ">= 0.13.0"
+  required_version = ">= 1.0.0"
 
   required_providers {
     google  = ">= 3.40.0"
@@ -24,9 +24,6 @@ terraform {
 provider "google" {
   project = var.project_id
   region  = var.region
-}
-
-provider "archive" {
 }
 
 # Secret Manager secret for the function

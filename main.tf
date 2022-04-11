@@ -1,4 +1,14 @@
+terraform {
+  required_version = ">= 1.0.0"
+
+  required_providers {
+    google = ">= 3.40.0"
+  }
+}
+
 provider "google" {
+  project = var.project_id
+  region  = var.region
 }
 
 data "google_project" "project" {
@@ -8,12 +18,10 @@ data "google_project" "project" {
 resource "google_scc_source" "source" {
   count = var.source_id == null ? 1 : 0
 
-  project      = var.project_id
   display_name = var.source_name
   organization = var.organization_id
   description  = var.source_name
 }
-
 
 resource "google_pubsub_topic" "topic" {
   project = var.project_id
@@ -37,6 +45,16 @@ resource "google_monitoring_notification_channel" "channel" {
   }
 }
 
+data "google_cloud_identity_group_memberships" "superadmin-members" {
+  count = var.superadmin_group != null ? 1 : 0
+  group = var.superadmin_group
+}
+
+locals {
+  all_superadmins     = [for member in data.google_cloud_identity_group_memberships.superadmin-members[0].memberships : format("\"%s\"", member.preferred_member_key[0].id)]
+  all_superadmins_str = format("(%s)", join(" OR ", local.all_superadmins))
+}
+
 resource "google_monitoring_alert_policy" "alert-policies" {
   for_each = var.alerts
 
@@ -46,7 +64,7 @@ resource "google_monitoring_alert_policy" "alert-policies" {
   conditions {
     display_name = each.value.finding
     condition_matched_log {
-      filter           = each.value.log_filter
+      filter           = replace(replace(each.value.log_filter, "%superadmins%", local.all_superadmins_str), "%superadmin-group%", var.superadmin_group)
       label_extractors = each.value.label_extractors
     }
   }
@@ -56,14 +74,6 @@ resource "google_monitoring_alert_policy" "alert-policies" {
     notification_rate_limit {
       period = each.value.interval
     }
-  }
-}
-
-data "template_file" "function-config" {
-  template = file("${path.module}/config.yaml")
-  vars = {
-    scc_source = var.source_id != null ? var.source_id : google_scc_source.source[0].name
-    findings   = jsonencode(var.alerts)
   }
 }
 
@@ -77,9 +87,13 @@ module "cloud-function" {
   function_name  = var.function_name
   function_roles = ["scc-findings"]
 
-  pubsub_topic    = google_pubsub_topic.topic.id
-  secret_id       = format("%s-config", var.function_name)
-  config_contents = data.template_file.function-config.rendered
+  pubsub_topic = google_pubsub_topic.topic.id
+  secret_id    = format("%s-config", var.function_name)
+  config_contents = templatefile(format("%s/config.yaml", path.module), {
+    scc_source = var.source_id != null ? var.source_id : google_scc_source.source[0].name
+    findings   = jsonencode(var.alerts)
+  })
+
 
   service_account = format("%s-sa", var.function_name)
   bucket_name     = format("%s-cf", var.function_name)
